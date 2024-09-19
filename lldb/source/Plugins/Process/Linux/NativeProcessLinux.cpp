@@ -302,13 +302,19 @@ NativeProcessLinux::Manager::Launch(ProcessLaunchInfo &launch_info,
     return arch_or.takeError();
 
   return std::unique_ptr<NativeProcessLinux>(new NativeProcessLinux(
-      pid, launch_info.GetPTY().ReleasePrimaryFileDescriptor(), native_delegate,
+      pid, StringRef(""), launch_info.GetPTY().ReleasePrimaryFileDescriptor(), native_delegate,
       *arch_or, *this, {pid}));
 }
 
 llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
 NativeProcessLinux::Manager::Attach(
     lldb::pid_t pid, NativeProcessProtocol::NativeDelegate &native_delegate) {
+    return Attach(pid, llvm::StringRef(""), native_delegate);
+}
+
+llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
+NativeProcessLinux::Manager::Attach(
+    lldb::pid_t pid, llvm::StringRef root, NativeProcessProtocol::NativeDelegate &native_delegate) {
   Log *log = GetLog(POSIXLog::Process);
   LLDB_LOG(log, "pid = {0:x}", pid);
 
@@ -322,7 +328,7 @@ NativeProcessLinux::Manager::Attach(
     return arch_or.takeError();
 
   return std::unique_ptr<NativeProcessLinux>(
-      new NativeProcessLinux(pid, -1, native_delegate, *arch_or, *this, tids));
+      new NativeProcessLinux(pid, root, -1, native_delegate, *arch_or, *this, tids));
 }
 
 NativeProcessLinux::Extension
@@ -422,12 +428,13 @@ void NativeProcessLinux::Manager::CollectThread(::pid_t tid) {
 
 // Public Instance Methods
 
-NativeProcessLinux::NativeProcessLinux(::pid_t pid, int terminal_fd,
+NativeProcessLinux::NativeProcessLinux(::pid_t pid, llvm::StringRef root, int terminal_fd,
                                        NativeDelegate &delegate,
                                        const ArchSpec &arch, Manager &manager,
                                        llvm::ArrayRef<::pid_t> tids)
     : NativeProcessELF(pid, terminal_fd, delegate), m_manager(manager),
       m_arch(arch), m_intel_pt_collector(*this) {
+  m_root = ConstString(root);
   manager.AddProcess(*this);
   if (m_terminal_fd != -1) {
     Status status = EnsureFDFlags(m_terminal_fd, O_NONBLOCK);
@@ -973,7 +980,7 @@ bool NativeProcessLinux::MonitorClone(NativeThreadLinux &parent,
   case PTRACE_EVENT_VFORK: {
     bool is_vfork = event == PTRACE_EVENT_VFORK;
     std::unique_ptr<NativeProcessLinux> child_process{new NativeProcessLinux(
-        static_cast<::pid_t>(child_pid), m_terminal_fd, m_delegate, m_arch,
+        static_cast<::pid_t>(child_pid), m_root, m_terminal_fd, m_delegate, m_arch,
         m_manager, {static_cast<::pid_t>(child_pid)})};
     if (!is_vfork)
       child_process->m_software_breakpoints = m_software_breakpoints;
@@ -1284,7 +1291,11 @@ Status NativeProcessLinux::PopulateMemoryRegionCache() {
   Status Result;
   LinuxMapCallback callback = [&](llvm::Expected<MemoryRegionInfo> Info) {
     if (Info) {
-      FileSpec file_spec(Info->GetName().GetCString());
+      const char* strName = Info->GetName().GetCString();
+      FileSpec file_spec(strName);
+      if (strName != NULL && strName[0] != '[') {
+        file_spec.SetRoot(m_root);
+      }
       FileSystem::Instance().Resolve(file_spec);
       m_mem_region_cache.emplace_back(*Info, file_spec);
       return true;
@@ -1845,6 +1856,7 @@ Status NativeProcessLinux::GetLoadedModuleFileSpec(const char *module_path,
     return error;
 
   FileSpec module_file_spec(module_path);
+  module_file_spec.SetRoot(m_root);
   FileSystem::Instance().Resolve(module_file_spec);
 
   file_spec.Clear();
@@ -1867,6 +1879,7 @@ Status NativeProcessLinux::GetFileLoadAddress(const llvm::StringRef &file_name,
     return error;
 
   FileSpec file(file_name);
+  file.SetRoot(m_root);
   for (const auto &it : m_mem_region_cache) {
     if (it.second == file) {
       load_addr = it.first.GetRange().GetRangeBase();

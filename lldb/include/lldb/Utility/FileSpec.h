@@ -232,6 +232,22 @@ public:
   /// Clear the directory in this object.
   void ClearDirectory();
 
+  /// Root string const get accessor.
+  ///
+  /// \return
+  ///     A const reference to the root string object.
+  const ConstString &GetRoot() const { return m_root; }
+
+  /// Root string set accessor.
+  ///
+  /// \param[in] root
+  ///     The value to replace the root with.
+  void SetRoot(ConstString root);
+  void SetRoot(llvm::StringRef root);
+
+  /// Clear the root in this object.
+  void ClearRoot();
+
 
   /// Filename string const get accessor.
   ///
@@ -424,6 +440,9 @@ protected:
 
   /// The unique'd filename path.
   ConstString m_filename;
+  
+  ///< The uniqued root path
+  ConstString m_root;
 
   /// Cache whether this path is absolute.
   mutable Absolute m_absolute = Absolute::Calculate;

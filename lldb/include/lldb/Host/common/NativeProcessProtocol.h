@@ -323,6 +323,9 @@ public:
     virtual llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
     Attach(lldb::pid_t pid, NativeDelegate &native_delegate) = 0;
 
+    virtual llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
+    Attach(lldb::pid_t pid, llvm::StringRef root, NativeDelegate &native_delegate) = 0;
+
     /// Get the bitmask of extensions supported by this process plugin.
     ///
     /// \return

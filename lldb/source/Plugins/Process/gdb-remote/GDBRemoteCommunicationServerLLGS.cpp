@@ -340,7 +340,7 @@ Status GDBRemoteCommunicationServerLLGS::LaunchProcess() {
   return Status();
 }
 
-Status GDBRemoteCommunicationServerLLGS::AttachToProcess(lldb::pid_t pid) {
+Status GDBRemoteCommunicationServerLLGS::AttachToProcess(lldb::pid_t pid, llvm::StringRef root) {
   Log *log = GetLog(LLDBLog::Process);
   LLDB_LOGF(log, "GDBRemoteCommunicationServerLLGS::%s pid %" PRIu64,
             __FUNCTION__, pid);
@@ -354,7 +354,7 @@ Status GDBRemoteCommunicationServerLLGS::AttachToProcess(lldb::pid_t pid) {
         pid, m_current_process->GetID());
 
   // Try to attach.
-  auto process_or = m_process_manager.Attach(pid, *this);
+  auto process_or = m_process_manager.Attach(pid, root, *this);
   if (!process_or) {
     Status status = Status::FromError(process_or.takeError());
     llvm::errs() << llvm::formatv("failed to attach to process {0}: {1}\n", pid,
@@ -432,7 +432,7 @@ Status GDBRemoteCommunicationServerLLGS::AttachWaitProcess(
       if (loop_process_list.size() == 1) {
         auto matching_process_pid = loop_process_list[0].GetProcessID();
         LLDB_LOG(log, "found pid {0}", matching_process_pid);
-        return AttachToProcess(matching_process_pid);
+        return AttachToProcess(matching_process_pid, loop_process_list[0].GetExecutableFile().GetRoot());
       }
 
       // Multiple matches! Return an error reporting the PIDs we found.

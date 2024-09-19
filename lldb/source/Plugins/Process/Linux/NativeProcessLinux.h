@@ -52,6 +52,9 @@ public:
     llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
     Attach(lldb::pid_t pid, NativeDelegate &native_delegate) override;
 
+    llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
+    Attach(lldb::pid_t pid, llvm::StringRef root, NativeDelegate &native_delegate) override;
+
     Extension GetSupportedExtensions() const override;
 
     void AddProcess(NativeProcessLinux &process) {
@@ -171,6 +174,8 @@ protected:
 
   llvm::Expected<uint64_t> Syscall(llvm::ArrayRef<uint64_t> args);
 
+  ConstString m_root;                 ///< The uniqued root path
+
 private:
   Manager &m_manager;
   ArchSpec m_arch;
@@ -184,7 +189,7 @@ private:
   llvm::DenseMap<lldb::addr_t, lldb::addr_t> m_allocated_memory;
 
   // Private Instance Methods
-  NativeProcessLinux(::pid_t pid, int terminal_fd, NativeDelegate &delegate,
+  NativeProcessLinux(::pid_t pid, llvm::StringRef root, int terminal_fd, NativeDelegate &delegate,
                      const ArchSpec &arch, Manager &manager,
                      llvm::ArrayRef<::pid_t> tids);
 

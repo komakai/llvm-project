@@ -59,7 +59,7 @@ public:
   /// \return
   ///     An Status object indicating the success or failure of the
   ///     attach operation.
-  Status AttachToProcess(lldb::pid_t pid);
+  Status AttachToProcess(lldb::pid_t pid, llvm::StringRef root = llvm::StringRef(""));
 
   /// Wait to attach to a process with a given name.
   ///

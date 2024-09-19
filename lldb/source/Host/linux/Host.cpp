@@ -266,7 +266,9 @@ static void GetProcessArgs(::pid_t pid, ProcessInstanceInfo &process_info) {
   }
 }
 
-static void GetExePathAndArch(::pid_t pid, ProcessInstanceInfo &process_info) {
+#define STAT_SUCCESS 0
+
+static void GetExePathAndArch(::pid_t pid, ProcessInstanceInfo &process_info, bool ignoreRoot) {
   Log *log = GetLog(LLDBLog::Process);
   std::string ExePath(PATH_MAX, '\0');
 
@@ -279,7 +281,7 @@ static void GetExePathAndArch(::pid_t pid, ProcessInstanceInfo &process_info) {
     ExePath.resize(len);
   } else {
     LLDB_LOG(log, "failed to read link exe link for {0}: {1}", pid,
-             Status(errno, eErrorTypePOSIX));
+             Status(errno, eErrorTypePOSIX)); 
     ExePath.resize(0);
   }
   // If the binary has been deleted, the link name has " (deleted)" appended.
@@ -288,8 +290,24 @@ static void GetExePathAndArch(::pid_t pid, ProcessInstanceInfo &process_info) {
   PathRef.consume_back(" (deleted)");
 
   if (!PathRef.empty()) {
+    std::string Root("");
+    if (!ignoreRoot) {
+      struct stat SelfStatBuf, ProcStatBuf;
+      llvm::SmallString<512> ProcRoot, ExeFromProcRoot, ExeFromSelfRoot;
+      (llvm::Twine("/proc/") + llvm::Twine(pid) + "/root").toVector(ProcRoot);
+      (llvm::Twine("/proc/self/root") + PathRef).toVector(ExeFromSelfRoot);
+      (llvm::Twine("/proc/") + llvm::Twine(pid) + "/root" + PathRef).toVector(ExeFromProcRoot);
+      int statSelfRoot = ::stat(ExeFromSelfRoot.c_str(), &SelfStatBuf);
+      int statProcRoot = ::stat(ExeFromProcRoot.c_str(), &ProcStatBuf);
+      if ((statSelfRoot != STAT_SUCCESS && statProcRoot == STAT_SUCCESS) ||
+          (statSelfRoot == STAT_SUCCESS && statProcRoot == STAT_SUCCESS && SelfStatBuf.st_ino != ProcStatBuf.st_ino)) {
+        Root = std::string(ProcRoot);
+      }
+    }
+
     process_info.GetExecutableFile().SetFile(PathRef, FileSpec::Style::native);
-    process_info.SetArchitecture(GetELFProcessCPUType(PathRef));
+    process_info.GetExecutableFile().SetRoot(Root);
+    process_info.SetArchitecture(GetELFProcessCPUType(process_info.GetExecutableFile().GetPath()));
   }
 }
 
@@ -310,14 +328,14 @@ static void GetProcessEnviron(::pid_t pid, ProcessInstanceInfo &process_info) {
 
 static bool GetProcessAndStatInfo(::pid_t pid,
                                   ProcessInstanceInfo &process_info,
-                                  ProcessState &State, ::pid_t &tracerpid) {
+                                  ProcessState &State, ::pid_t &tracerpid, bool ignoreRoot) {
   ::pid_t tgid;
   tracerpid = 0;
   process_info.Clear();
 
   process_info.SetProcessID(pid);
 
-  GetExePathAndArch(pid, process_info);
+  GetExePathAndArch(pid, process_info, ignoreRoot);
   GetProcessArgs(pid, process_info);
   GetProcessEnviron(pid, process_info);
 
@@ -353,7 +371,7 @@ uint32_t Host::FindProcessesImpl(const ProcessInstanceInfoMatch &match_info,
       ProcessState State;
       ProcessInstanceInfo process_info;
 
-      if (!GetProcessAndStatInfo(pid, process_info, State, tracerpid))
+      if (!GetProcessAndStatInfo(pid, process_info, State, tracerpid, true))
         continue;
 
       // Skip if process is being debugged.
@@ -369,6 +387,7 @@ uint32_t Host::FindProcessesImpl(const ProcessInstanceInfoMatch &match_info,
         continue;
 
       if (match_info.Matches(process_info)) {
+        GetProcessAndStatInfo(pid, process_info, State, tracerpid, false);
         process_infos.push_back(process_info);
       }
     }
@@ -408,7 +427,9 @@ bool Host::FindProcessThreads(const lldb::pid_t pid, TidMap &tids_to_attach) {
 bool Host::GetProcessInfo(lldb::pid_t pid, ProcessInstanceInfo &process_info) {
   ::pid_t tracerpid;
   ProcessState State;
-  return GetProcessAndStatInfo(pid, process_info, State, tracerpid);
+  Log *log = GetLog(LLDBLog::Host);
+  LLDB_LOG(log, "GetProcessInfo for {0}", pid);
+  return GetProcessAndStatInfo(pid, process_info, State, tracerpid, false);
 }
 
 Environment Host::GetEnvironment() { return Environment(environ); }

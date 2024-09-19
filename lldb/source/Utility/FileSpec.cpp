@@ -259,6 +259,7 @@ Stream &lldb_private::operator<<(Stream &s, const FileSpec &f) {
 void FileSpec::Clear() {
   m_directory.Clear();
   m_filename.Clear();
+  m_root.Clear();
   PathWasModified();
 }
 
@@ -342,6 +343,16 @@ void FileSpec::SetDirectory(llvm::StringRef directory) {
   PathWasModified();
 }
 
+void FileSpec::SetRoot(ConstString root) {
+  m_root = root;
+  PathWasModified();
+}
+
+void FileSpec::SetRoot(llvm::StringRef root) {
+  m_root = ConstString(root);
+  PathWasModified();
+}
+
 void FileSpec::SetFilename(ConstString filename) {
   m_filename = filename;
   PathWasModified();
@@ -359,6 +370,11 @@ void FileSpec::ClearFilename() {
 
 void FileSpec::ClearDirectory() {
   m_directory.Clear();
+  PathWasModified();
+}
+
+void FileSpec::ClearRoot() {
+  m_root.Clear();
   PathWasModified();
 }
 
@@ -386,6 +402,9 @@ ConstString FileSpec::GetPathAsConstString(bool denormalize) const {
 
 void FileSpec::GetPath(llvm::SmallVectorImpl<char> &path,
                        bool denormalize) const {
+  path.append(m_root.GetStringRef().begin(),
+              m_root.GetStringRef().end());
+
   path.append(m_directory.GetStringRef().begin(),
               m_directory.GetStringRef().end());
   // Since the path was normalized and all paths use '/' when stored in these
